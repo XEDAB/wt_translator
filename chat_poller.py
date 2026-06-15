@@ -37,6 +37,8 @@ class ChatPoller:
         self._connected = False
         self._thread = None
         self._fail_count = 0
+        self._max_fail = 5  # 连续失败多少次判定为断开
+        # 注：以下变量在 CPython GIL 下线程安全，无需显式 Lock
 
     @property
     def base_url(self):
@@ -68,7 +70,6 @@ class ChatPoller:
 
     def _poll_loop(self):
         interval = settings.get("poll_interval", 2)
-        max_fail = 5  # 连续失败多少次判定为断开
 
         while self._running:
             try:
@@ -118,7 +119,7 @@ class ChatPoller:
 
     def _on_fail(self):
         self._fail_count += 1
-        if self._fail_count >= 5 and self._connected:
+        if self._fail_count >= self._max_fail and self._connected:
             self._connected = False
             self._notify_status(False)
 

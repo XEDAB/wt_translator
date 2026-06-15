@@ -45,7 +45,7 @@ COLOR_SEPARATOR = "#444444"       # 分隔线颜色
 COLOR_WAITING = "#FFAA00"         # 等待连接提示颜色
 
 # ── 用户配置文件 ──────────────────
-import json, os, sys
+import json, os, sys, time
 
 def _app_dir():
     """获取应用根目录（兼容 PyInstaller exe 和直接运行脚本）"""
@@ -79,11 +79,7 @@ def load_settings():
             return merged, False
         except (json.JSONDecodeError, ValueError, OSError):
             # 文件损坏 → 备份并重建
-            backup = SETTINGS_FILE + ".bak"
-            n = 1
-            while os.path.exists(backup):
-                backup = SETTINGS_FILE + f".bak{n}"
-                n += 1
+            backup = SETTINGS_FILE + f".{int(time.time())}.bak"
             os.rename(SETTINGS_FILE, backup)
     # 创建默认
     _atomic_save(DEFAULT_SETTINGS)
@@ -96,9 +92,13 @@ def save_settings(settings):
 def _atomic_save(data):
     """temp + rename，防止写入中断导致文件损坏"""
     tmp = SETTINGS_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, SETTINGS_FILE)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, SETTINGS_FILE)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 def needs_save(settings):
     """内存中的设置是否与磁盘不同"""

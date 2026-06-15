@@ -7,10 +7,11 @@
 """
 
 import requests
+from collections import OrderedDict
 from config import settings
 
-_cache_to_cn = {}
-_cache_from_cn = {}
+_cache_to_cn = OrderedDict()
+_cache_from_cn = OrderedDict()
 MAX_CACHE_SIZE = 300
 
 
@@ -26,7 +27,7 @@ BACKENDS = {
     },
     "deepseek": {
         "name": "DeepSeek V4",
-        "url": "https://api.deepseek.com/chat/completions",   # 注意：不是 /v1/ 路径
+        "url": "https://api.deepseek.com/v1/chat/completions",
         "model": "deepseek-v4-flash",
         "free": False,
         "thinking": False,   # 翻译关闭思考，省 token
@@ -176,11 +177,10 @@ def translate_to_chinese(text: str) -> str:
         return text
 
     text = text.strip()
-    cache_key = f"to_cn:{text}"
+    backend, cfg = _get_backend_config()
+    cache_key = f"{backend}:to_cn:{text}"
     if cache_key in _cache_to_cn:
         return _cache_to_cn[cache_key]
-
-    backend, cfg = _get_backend_config()
 
     try:
         if backend == "microsoft":
@@ -191,7 +191,7 @@ def translate_to_chinese(text: str) -> str:
         result = f"[翻译失败: {e}]"
 
     if len(_cache_to_cn) >= MAX_CACHE_SIZE:
-        _cache_to_cn.pop(next(iter(_cache_to_cn)))
+        _cache_to_cn.popitem(last=False)
     _cache_to_cn[cache_key] = result
     return result
 
@@ -202,11 +202,10 @@ def translate_from_chinese(text: str, target_lang: str) -> str:
         return text
 
     text = text.strip()
-    cache_key = f"from_cn:{target_lang}:{text}"
+    backend, cfg = _get_backend_config()
+    cache_key = f"{backend}:from_cn:{target_lang}:{text}"
     if cache_key in _cache_from_cn:
         return _cache_from_cn[cache_key]
-
-    backend, cfg = _get_backend_config()
 
     try:
         if backend == "microsoft":
@@ -217,7 +216,7 @@ def translate_from_chinese(text: str, target_lang: str) -> str:
         result = f"[翻译失败: {e}]"
 
     if len(_cache_from_cn) >= MAX_CACHE_SIZE:
-        _cache_from_cn.pop(next(iter(_cache_from_cn)))
+        _cache_from_cn.popitem(last=False)
     _cache_from_cn[cache_key] = result
     return result
 
@@ -229,14 +228,14 @@ def detect_language(text: str) -> str:
     text = text.strip()
 
     ru = sum(1 for c in text if 'а' <= c <= 'я' or 'А' <= c <= 'Я')
+    ja = sum(1 for c in text if 'ぁ' <= c <= 'ヿ')   # 假名优先，避免汉字误判
     zh = sum(1 for c in text if '一' <= c <= '鿿')
-    ja = sum(1 for c in text if '぀' <= c <= 'ヿ')  # 平假名 + 片假名
-    ko = sum(1 for c in text if '가' <= c <= '힯')  # 韩文音节
+    ko = sum(1 for c in text if '가' <= c <= '힣')   # 标准韩文上限
     n = len(text)
 
-    if ru > n * 0.5: return "ru"
-    if zh > n * 0.3: return "zh"
-    if ja > n * 0.3: return "ja"
-    if ko > n * 0.3: return "ko"
+    if ja > 0:                                    return "ja"  # 有假名必日文
+    if ru > n * 0.5:                              return "ru"
+    if zh > n * 0.3:                              return "zh"
+    if ko > n * 0.3:                              return "ko"
     if sum(1 for c in text if c.isascii() and c.isalpha()) > n * 0.5: return "en"
     return "??"

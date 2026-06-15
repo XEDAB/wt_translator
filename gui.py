@@ -200,28 +200,34 @@ class TranslatorApp:
         with self._lock:
             msgs = self._pending_messages[:]
             self._pending_messages.clear()
-        if msgs:
+        if msgs and not self._shutting_down:
             self.status_label.configure(text="已连接 ", fg=GOOD)
             for msg in msgs:
+                if self._shutting_down:
+                    break
                 self._executor.submit(self._translate_and_add, msg)
         self.root.after(500, self._process_pending)
 
     def _translate_and_add(self, msg_dict):
         """子线程中执行翻译，完成后由主线程更新列表"""
+        if self._shutting_down:
+            return
         original = msg_dict.get("msg", "").strip()
         if not original:
             return
-        max_len = settings.get("max_msg_length", 200)
-        if len(original) > max_len:
-            original = original[:max_len] + "..."
 
         translated = translate_to_chinese(original)
-        # 通过 after 将列表更新转回主线程，避免竞态
+        if self._shutting_down:
+            return
         self.root.after(0, lambda: self._append_message(msg_dict, original, translated))
 
     def _append_message(self, msg_dict, original, translated):
         """主线程更新消息列表（线程安全）"""
-        entry = {"msg_dict": msg_dict, "original": original, "translated": translated}
+        max_len = settings.get("max_msg_length", 200)
+        display_original = original[:max_len] + "..." if len(original) > max_len else original
+        display_translated = translated[:max_len] + "..." if len(translated) > max_len else translated
+
+        entry = {"msg_dict": msg_dict, "original": display_original, "translated": display_translated}
         self.recent_messages.append(entry)
         max_lines = settings.get("max_chat_lines", 3)
         if len(self.recent_messages) > max_lines:
@@ -280,14 +286,13 @@ class TranslatorApp:
             return
         target_code = TARGET_LANGS.get(self.lang_var.get(), "en")
         self.result_label.configure(text="翻译中...", fg=ACC)
+        self._executor.submit(self._do_translate_and_show, text, target_code)
 
-        def do():
-            result = translate_from_chinese(text, target_code)
-            display = result or "[空译文]"
-            color = FG if result else FG2
-            self.root.after(0, lambda d=display, c=color: self.result_label.configure(text=d, fg=c))
-
-        threading.Thread(target=do, daemon=True).start()
+    def _do_translate_and_show(self, text, target_code):
+        result = translate_from_chinese(text, target_code)
+        display = result or "[空译文]"
+        color = FG if result else FG2
+        self.root.after(0, lambda d=display, c=color: self.result_label.configure(text=d, fg=c))
 
     def _on_copy_result(self):
         text = self.result_label.cget("text")

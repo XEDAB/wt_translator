@@ -9,7 +9,6 @@ WT Chat Translator — 入口
 """
 
 import sys
-import time
 import tkinter as tk
 
 from config import settings, settings_just_created, save_settings, needs_save
@@ -52,11 +51,6 @@ def main():
         def on_close():
             app._shutting_down = True
             poller.stop()
-            deadline = time.time() + 8
-            for t in list(getattr(app, "_translation_threads", [])):
-                remaining = deadline - time.time()
-                if remaining > 0:
-                    t.join(timeout=remaining)
             app._executor.shutdown(wait=False)
             app.destroy()
 
